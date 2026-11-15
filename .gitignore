@@ -1,0 +1,9 @@
+# Keep real database connection settings private
+/config/db_connection.php
+
+# macOS files
+.DS_Store
+
+# Editor files
+.vscode/
+.idea/
