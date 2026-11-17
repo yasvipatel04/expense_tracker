@@ -473,3 +473,77 @@ button.delete:hover {
         font-size: 12px;
     }
 }
+
+/* Monthly budget form and comparison */
+.budget-section {
+    margin-top: 28px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+}
+.budget-section h3 {
+    margin: 0 0 8px;
+    font-size: 21px;
+}
+.budget-form {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+    align-items: end;
+    gap: 12px;
+    margin: 18px 0 22px;
+    padding: 16px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #f8fbfd;
+}
+.budget-form-action {
+    padding-bottom: 1px;
+}
+.budget-month-filter {
+    display: flex;
+    align-items: end;
+    gap: 10px;
+    max-width: 430px;
+    margin: 0 0 16px;
+}
+.budget-month-filter .field {
+    flex: 1;
+}
+.budget-progress {
+    width: min(180px, 100%);
+    height: 8px;
+    margin-top: 7px;
+    overflow: hidden;
+    border-radius: 99px;
+    background: #e8f0f3;
+}
+.budget-progress span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--teal), #16a69a);
+}
+.budget-progress span.over {
+    background: #d9534f;
+}
+.budget-ok {
+    color: #21633b;
+    font-weight: bold;
+}
+.budget-over {
+    color: #b83b37;
+    font-weight: bold;
+}
+@media (max-width: 850px) {
+    .budget-form {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@media (max-width: 600px) {
+    .budget-form {
+        grid-template-columns: 1fr;
+    }
+    .budget-month-filter {
+        align-items: stretch;
+        flex-direction: column;
+    }
+}

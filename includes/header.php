@@ -19,18 +19,23 @@ $activeTab = $activeTab ?? "view";
     </header>
 
     <nav class="tabs">
+
+         <a href="index.php?tab=view"
+           class="<?= $activeTab === "view" ? "active" : "" ?>">
+            ☷ View Expenses
+        </a>
+
         <a href="index.php?tab=add"
            class="<?= $activeTab === "add" ? "active" : "" ?>">
             ＋ Add Expense
         </a>
 
-        <a href="index.php?tab=view"
-           class="<?= $activeTab === "view" ? "active" : "" ?>">
-            ☷ View Expenses
-        </a>
-
         <a href="index.php?tab=summary"
            class="<?= $activeTab === "summary" ? "active" : "" ?>">
             ▥ Expense Summary Charts
+        </a>
+        <a href="index.php?tab=budgets"
+           class="<?= $activeTab === "budgets" ? "active" : "" ?>">
+            Monthly Budgets
         </a>
     </nav>

@@ -47,7 +47,7 @@ function bindDynamic($stmt, $types, &$params)
 
 $activeTab = $_GET["tab"] ?? "view";
 
-if (!in_array($activeTab, ["add", "view", "summary"], true)) {
+if (!in_array($activeTab, ["add", "view", "summary", "budgets"], true)) {
     $activeTab = "view";
 }
 
@@ -122,6 +122,49 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["description"])) {
     }
 }
 
+// Save or update one category's monthly budget.
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["save_monthly_budget"])) {
+    $budgetCategoryId = $_POST["budget_category_id"] ?? "";
+    $budgetAmount = $_POST["budget_amount"] ?? "";
+    $submittedBudgetMonth = trim($_POST["budget_month"] ?? "");
+    $budgetMonthDate = DateTime::createFromFormat("!Y-m", $submittedBudgetMonth);
+
+    if (
+        !ctype_digit((string)$budgetCategoryId) ||
+        !is_numeric($budgetAmount) ||
+        (float)$budgetAmount <= 0 ||
+        !$budgetMonthDate ||
+        $budgetMonthDate->format("Y-m") !== $submittedBudgetMonth
+    ) {
+        header("Location: index.php?tab=budgets&budget_error=1");
+        exit;
+    }
+
+    $budgetMonthStart = $budgetMonthDate->format("Y-m-01");
+    $budgetAmount = (float)$budgetAmount;
+    $budgetStmt = mysqli_prepare(
+        $con,
+        "INSERT INTO monthly_budgets (category_id, month_start, budget_amount)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE budget_amount = VALUES(budget_amount)"
+    );
+    mysqli_stmt_bind_param(
+        $budgetStmt,
+        "isd",
+        $budgetCategoryId,
+        $budgetMonthStart,
+        $budgetAmount
+    );
+    mysqli_stmt_execute($budgetStmt);
+    mysqli_stmt_close($budgetStmt);
+
+    header(
+        "Location: index.php?tab=budgets&budget_month=" .
+        urlencode($submittedBudgetMonth) . "&budget_saved=1"
+    );
+    exit;
+}
+
 // Read filters for the View Expenses tab
 $search = trim($_GET["search"] ?? "");
 $minAmount = trim($_GET["min_amount"] ?? "");
@@ -130,6 +173,16 @@ $dateFrom = trim($_GET["date_from"] ?? "");
 $dateTo = trim($_GET["date_to"] ?? "");
 $month = trim($_GET["month"] ?? "");
 $filterCategory = trim($_GET["category_id"] ?? "");
+
+// Selected month for the category budget comparison.
+$budgetMonth = trim($_GET["budget_month"] ?? date("Y-m"));
+$budgetMonthDate = DateTime::createFromFormat("!Y-m", $budgetMonth);
+if (!$budgetMonthDate || $budgetMonthDate->format("Y-m") !== $budgetMonth) {
+    $budgetMonth = date("Y-m");
+    $budgetMonthDate = DateTime::createFromFormat("!Y-m", $budgetMonth);
+}
+$budgetMonthStart = $budgetMonthDate->format("Y-m-01");
+$budgetMonthEnd = (clone $budgetMonthDate)->modify("+1 month")->format("Y-m-01");
 
 // Build filter conditions and prepared-statement values
 $where = [];
@@ -299,6 +352,34 @@ $monthlyChartResult = mysqli_query(
 );
 $monthlyChart = mysqli_fetch_all($monthlyChartResult, MYSQLI_ASSOC);
 
+// Compare each category's selected-month budget with actual expenses.
+$budgetCompareStmt = mysqli_prepare(
+    $con,
+    "SELECT c.category_id, c.category_name, b.budget_amount,
+            COALESCE(SUM(e.amount), 0) AS actual_spent
+     FROM categories c
+     LEFT JOIN monthly_budgets b
+       ON b.category_id = c.category_id
+      AND b.month_start = ?
+     LEFT JOIN expenses e
+       ON e.category_id = c.category_id
+      AND e.expense_date >= ?
+      AND e.expense_date < ?
+     GROUP BY c.category_id, c.category_name, b.budget_amount
+     ORDER BY c.category_name"
+);
+mysqli_stmt_bind_param(
+    $budgetCompareStmt,
+    "sss",
+    $budgetMonthStart,
+    $budgetMonthStart,
+    $budgetMonthEnd
+);
+mysqli_stmt_execute($budgetCompareStmt);
+$budgetCompareResult = mysqli_stmt_get_result($budgetCompareStmt);
+$budgetComparison = mysqli_fetch_all($budgetCompareResult, MYSQLI_ASSOC);
+mysqli_stmt_close($budgetCompareStmt);
+
 // Calculate totals and maximum values for chart sizes
 $categoryChartTotal = 0;
 $categoryChartMax = 0;
@@ -366,6 +447,16 @@ require __DIR__ . "/includes/header.php";
 
         <?php if (isset($_GET["deleted"])): ?>
             <div class="notice">Expense deleted.</div>
+        <?php endif; ?>
+
+        <?php if (isset($_GET["budget_saved"])): ?>
+            <div class="notice">Monthly budget saved successfully.</div>
+        <?php endif; ?>
+
+        <?php if (isset($_GET["budget_error"])): ?>
+            <div class="notice error">
+                Enter a valid category, month, and budget amount greater than zero.
+            </div>
         <?php endif; ?>
 
         <?php if ($activeTab === "add"): ?>
@@ -526,6 +617,102 @@ require __DIR__ . "/includes/header.php";
                     </section>
                 </div>
             <?php endif; ?>
+
+        <?php elseif ($activeTab === "budgets"): ?>
+            <section class="budget-section">
+                <h3>Monthly budgets by category</h3>
+                <p class="hint">
+                    Set a category limit and compare it with what you spent in that month.
+                </p>
+
+                <form method="post" action="index.php?tab=budgets" class="budget-form">
+                    <input type="hidden" name="save_monthly_budget" value="1">
+                    <div class="field">
+                        <label for="budget_month_input">Month</label>
+                        <input id="budget_month_input" type="month" name="budget_month"
+                               value="<?= htmlspecialchars($budgetMonth) ?>" required>
+                    </div>
+                    <div class="field">
+                        <label for="budget_category_id">Category</label>
+                        <select id="budget_category_id" name="budget_category_id" required>
+                            <option value="">Choose a category</option>
+                            <?php foreach ($categories as $category): ?>
+                                <option value="<?= (int)$category["category_id"] ?>">
+                                    <?= htmlspecialchars($category["category_name"]) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="budget_amount">Monthly limit</label>
+                        <input id="budget_amount" type="number" name="budget_amount"
+                               min="0.01" step="0.01" placeholder="For example, 300.00" required>
+                    </div>
+                    <div class="budget-form-action">
+                        <button type="submit">Save budget</button>
+                    </div>
+                </form>
+
+                <form method="get" action="index.php" class="budget-month-filter">
+                    <input type="hidden" name="tab" value="budgets">
+                    <div class="field">
+                        <label for="budget_month_filter">View budget month</label>
+                        <input id="budget_month_filter" type="month" name="budget_month"
+                               value="<?= htmlspecialchars($budgetMonth) ?>">
+                    </div>
+                    <button class="button teal" type="submit">Show month</button>
+                </form>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th>Budget</th>
+                                <th>Spent</th>
+                                <th>Remaining / status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($budgetComparison as $budgetRow): ?>
+                                <?php
+                                $actualSpent = (float)$budgetRow["actual_spent"];
+                                $hasBudget = $budgetRow["budget_amount"] !== null;
+                                $budgetLimit = $hasBudget ? (float)$budgetRow["budget_amount"] : 0;
+                                $spentPercent = $budgetLimit > 0
+                                    ? min(100, ($actualSpent / $budgetLimit) * 100)
+                                    : 0;
+                                $isOverBudget = $hasBudget && $actualSpent > $budgetLimit;
+                                ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($budgetRow["category_name"]) ?></td>
+                                    <td><?= $hasBudget ? "$" . number_format($budgetLimit, 2) : "Not set" ?></td>
+                                    <td>$<?= number_format($actualSpent, 2) ?></td>
+                                    <td>
+                                        <?php if (!$hasBudget): ?>
+                                            Set a budget above
+                                        <?php elseif ($isOverBudget): ?>
+                                            <span class="budget-over">
+                                                Over by $<?= number_format($actualSpent - $budgetLimit, 2) ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="budget-ok">
+                                                $<?= number_format($budgetLimit - $actualSpent, 2) ?> left
+                                            </span>
+                                        <?php endif; ?>
+                                        <?php if ($hasBudget): ?>
+                                            <div class="budget-progress">
+                                                <span class="<?= $isOverBudget ? "over" : "" ?>"
+                                                      style="width: <?= number_format($spentPercent, 2, ".", "") ?>%"></span>
+                                            </div>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
 
         <?php else: ?>
             <h2>Your expenses</h2>
@@ -744,3 +931,6 @@ require __DIR__ . "/includes/header.php";
 </main>
 
 <?php require __DIR__ . "/includes/footer.php"; ?>
+
+
+
