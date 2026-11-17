@@ -8,7 +8,7 @@ $activeTab = $activeTab ?? "view";
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= htmlspecialchars($pageTitle) ?></title>
-    <link rel="stylesheet" href="assets/style.css">
+    <link rel="stylesheet" href="assets/style.css?v=2">
 </head>
 <body>
 <div class="page">
@@ -23,8 +23,14 @@ $activeTab = $activeTab ?? "view";
            class="<?= $activeTab === "add" ? "active" : "" ?>">
             ＋ Add Expense
         </a>
+
         <a href="index.php?tab=view"
            class="<?= $activeTab === "view" ? "active" : "" ?>">
             ☷ View Expenses
+        </a>
+
+        <a href="index.php?tab=summary"
+           class="<?= $activeTab === "summary" ? "active" : "" ?>">
+            ▥ Expense Summary Charts
         </a>
     </nav>

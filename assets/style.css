@@ -56,6 +56,7 @@ body {
 
 .tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     margin-top: 18px;
     padding: 12px 12px 0;
@@ -72,13 +73,20 @@ body {
     text-decoration: none;
 }
 
+.tabs a:hover {
+    background: #f1f8f8;
+    color: var(--teal-dark);
+}
+
 .tabs a.active {
     border-bottom: 3px solid var(--teal);
     background: #eaf8f6;
     color: var(--teal-dark);
 }
 
-.main-card, .stat-card, .form-card {
+.main-card,
+.stat-card,
+.form-card {
     border: 1px solid var(--line);
     border-radius: 17px;
     background: var(--white);
@@ -115,6 +123,10 @@ h2 {
     margin: 0 0 8px;
 }
 
+h3 {
+    color: var(--ink);
+}
+
 .hint {
     margin: 0 0 20px;
     color: var(--muted);
@@ -138,7 +150,8 @@ label {
     font-weight: bold;
 }
 
-input, select {
+input,
+select {
     width: 100%;
     padding: 11px 12px;
     border: 1px solid #d5e0e9;
@@ -148,12 +161,14 @@ input, select {
     font: inherit;
 }
 
-input:focus, select:focus {
+input:focus,
+select:focus {
     border-color: var(--teal);
     outline: 3px solid #087f8c18;
 }
 
-button, .button {
+button,
+.button {
     display: inline-block;
     padding: 11px 15px;
     border: 0;
@@ -166,7 +181,8 @@ button, .button {
     text-decoration: none;
 }
 
-button:hover, .button:hover {
+button:hover,
+.button:hover {
     background: #f36e55;
 }
 
@@ -229,7 +245,8 @@ table {
     white-space: nowrap;
 }
 
-th, td {
+th,
+td {
     padding: 12px;
     border-bottom: 1px solid #e8edf2;
     text-align: left;
@@ -288,7 +305,8 @@ button.delete:hover {
     margin-top: 18px;
 }
 
-.pagination a, .pagination span {
+.pagination a,
+.pagination span {
     padding: 8px 12px;
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -310,8 +328,115 @@ button.delete:hover {
     text-align: center;
 }
 
-@media (max-width: 700px) {
-    .stats, .grid, .filter-grid {
+/* Expense summary charts */
+
+.chart-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.chart-card {
+    min-width: 0;
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: #fbfdff;
+}
+
+.chart-card h3 {
+    margin: 0 0 6px;
+    font-size: 18px;
+}
+
+.chart-caption {
+    margin: 0 0 20px;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.category-chart-row + .category-chart-row {
+    margin-top: 17px;
+}
+
+.chart-row-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 7px;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.chart-row-heading span:last-child {
+    text-align: right;
+}
+
+.bar-track {
+    height: 12px;
+    overflow: hidden;
+    border-radius: 99px;
+    background: #e8f0f3;
+}
+
+.bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--teal), #16a69a);
+}
+
+.monthly-chart {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+    min-height: 235px;
+    padding-top: 4px;
+}
+
+.month-column {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    text-align: center;
+}
+
+.month-value {
+    min-height: 20px;
+    color: var(--muted);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.month-bar-area {
+    display: flex;
+    width: 100%;
+    height: 165px;
+    align-items: flex-end;
+    justify-content: center;
+    border-bottom: 1px solid var(--line);
+}
+
+.month-bar {
+    width: min(32px, 70%);
+    min-height: 4px;
+    border-radius: 7px 7px 0 0;
+    background: linear-gradient(180deg, #16a69a, var(--teal));
+}
+
+.month-label {
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 11px;
+}
+
+@media (max-width: 760px) {
+    .stats,
+    .grid,
+    .filter-grid,
+    .chart-grid {
         grid-template-columns: 1fr;
     }
 
@@ -331,5 +456,20 @@ button.delete:hover {
 
     .filter-actions {
         flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 450px) {
+    .monthly-chart {
+        gap: 3px;
+    }
+
+    .month-value,
+    .month-label {
+        font-size: 9px;
+    }
+
+    .chart-row-heading {
+        font-size: 12px;
     }
 }

@@ -46,7 +46,8 @@ function bindDynamic($stmt, $types, &$params)
 }
 
 $activeTab = $_GET["tab"] ?? "view";
-if (!in_array($activeTab, ["add", "view"], true)) {
+
+if (!in_array($activeTab, ["add", "view", "summary"], true)) {
     $activeTab = "view";
 }
 
@@ -77,6 +78,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["description"])) {
         );
         mysqli_stmt_bind_param($stmt, "i", $categoryId);
         mysqli_stmt_execute($stmt);
+
         $selectedCategoryName = "";
         mysqli_stmt_bind_result($stmt, $selectedCategoryName);
         $categoryFound = mysqli_stmt_fetch($stmt);
@@ -99,6 +101,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["description"])) {
                     (description, amount, expense_date, category_id)
                  VALUES (?, ?, ?, ?)"
             );
+
             mysqli_stmt_bind_param(
                 $stmt,
                 "sdsi",
@@ -107,6 +110,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["description"])) {
                 $expenseDate,
                 $categoryId
             );
+
             mysqli_stmt_execute($stmt);
             mysqli_stmt_close($stmt);
 
@@ -118,7 +122,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["description"])) {
     }
 }
 
-// Read filters
+// Read filters for the View Expenses tab
 $search = trim($_GET["search"] ?? "");
 $minAmount = trim($_GET["min_amount"] ?? "");
 $maxAmount = trim($_GET["max_amount"] ?? "");
@@ -198,6 +202,7 @@ $countSql = "
     JOIN categories c ON c.category_id = e.category_id
     $whereSql
 ";
+
 $countStmt = mysqli_prepare($con, $countSql);
 $countParams = $params;
 bindDynamic($countStmt, $types, $countParams);
@@ -219,6 +224,7 @@ $listSql = "
     ORDER BY e.expense_date DESC, e.expense_id DESC
     LIMIT ? OFFSET ?
 ";
+
 $listStmt = mysqli_prepare($con, $listSql);
 
 $listParams = $params;
@@ -239,7 +245,7 @@ $categoriesResult = mysqli_query(
 );
 $categories = mysqli_fetch_all($categoriesResult, MYSQLI_ASSOC);
 
-// Dashboard summary
+// Dashboard summary cards
 $statsResult = mysqli_query(
     $con,
     "SELECT
@@ -259,6 +265,56 @@ $statsResult = mysqli_query(
 );
 $stats = mysqli_fetch_assoc($statsResult);
 
+// Summary chart: totals for each category
+$categoryChartResult = mysqli_query(
+    $con,
+    "SELECT c.category_name, SUM(e.amount) AS total
+     FROM expenses e
+     JOIN categories c ON c.category_id = e.category_id
+     GROUP BY c.category_id, c.category_name
+     ORDER BY total DESC"
+);
+$categoryChart = mysqli_fetch_all($categoryChartResult, MYSQLI_ASSOC);
+
+// Summary chart: totals for the last six months
+$monthlyChartResult = mysqli_query(
+    $con,
+    "SELECT DATE_FORMAT(months.month_start, '%b %Y') AS month_label,
+            COALESCE(SUM(e.amount), 0) AS total
+     FROM (
+         SELECT DATE_SUB(
+             DATE_FORMAT(CURDATE(), '%Y-%m-01'),
+             INTERVAL seq.month_offset MONTH
+         ) AS month_start
+         FROM (
+             SELECT 0 AS month_offset UNION ALL SELECT 1 UNION ALL SELECT 2
+             UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
+         ) AS seq
+     ) AS months
+     LEFT JOIN expenses e
+       ON e.expense_date >= months.month_start
+      AND e.expense_date < DATE_ADD(months.month_start, INTERVAL 1 MONTH)
+     GROUP BY months.month_start
+     ORDER BY months.month_start"
+);
+$monthlyChart = mysqli_fetch_all($monthlyChartResult, MYSQLI_ASSOC);
+
+// Calculate totals and maximum values for chart sizes
+$categoryChartTotal = 0;
+$categoryChartMax = 0;
+
+foreach ($categoryChart as $row) {
+    $categoryChartTotal += (float)$row["total"];
+    $categoryChartMax = max($categoryChartMax, (float)$row["total"]);
+}
+
+$monthlyChartMax = 0;
+
+foreach ($monthlyChart as $row) {
+    $monthlyChartMax = max($monthlyChartMax, (float)$row["total"]);
+}
+
+// Category count for the dashboard summary
 $categoryCountResult = mysqli_query(
     $con,
     "SELECT COUNT(*) AS total FROM categories"
@@ -276,12 +332,14 @@ require __DIR__ . "/includes/header.php";
             $<?= number_format((float)$stats["total_spent"], 2) ?>
         </div>
     </div>
+
     <div class="stat-card">
         <div class="stat-label">Spent this month</div>
         <div class="stat-value">
             $<?= number_format((float)$stats["month_spent"], 2) ?>
         </div>
     </div>
+
     <div class="stat-card">
         <div class="stat-label">Expenses · Categories</div>
         <div class="stat-value">
@@ -293,7 +351,9 @@ require __DIR__ . "/includes/header.php";
 <main class="main-card">
     <div class="content">
         <?php if ($error !== ""): ?>
-            <div class="notice error"><?= htmlspecialchars($error) ?></div>
+            <div class="notice error">
+                <?= htmlspecialchars($error) ?>
+            </div>
         <?php endif; ?>
 
         <?php if (isset($_GET["saved"])): ?>
@@ -353,10 +413,14 @@ require __DIR__ . "/includes/header.php";
                         <label for="category_id">Category</label>
                         <select id="category_id" name="category_id" required>
                             <option value="">Choose a category</option>
+
                             <?php foreach ($categories as $category): ?>
                                 <option
                                     value="<?= (int)$category["category_id"] ?>"
-                                    data-category="<?= htmlspecialchars($category["category_name"], ENT_QUOTES) ?>"
+                                    data-category="<?= htmlspecialchars(
+                                        $category["category_name"],
+                                        ENT_QUOTES
+                                    ) ?>"
                                 >
                                     <?= htmlspecialchars($category["category_name"]) ?>
                                 </option>
@@ -380,9 +444,94 @@ require __DIR__ . "/includes/header.php";
                 </div>
             </form>
 
+        <?php elseif ($activeTab === "summary"): ?>
+            <h2>Expense Summary Charts</h2>
+            <p class="hint">
+                Explore your spending by category and month.
+            </p>
+
+            <?php if ($categoryChartTotal <= 0): ?>
+                <div class="empty">
+                    Add an expense to see your summary charts.
+                </div>
+            <?php else: ?>
+                <div class="chart-grid">
+                    <section class="chart-card">
+                        <h3>Spending by category</h3>
+                        <p class="chart-caption">
+                            Total spent:
+                            $<?= number_format($categoryChartTotal, 2) ?>
+                        </p>
+
+                        <?php foreach ($categoryChart as $row): ?>
+                            <?php
+                            $amount = (float)$row["total"];
+                            $width = ($amount / $categoryChartMax) * 100;
+                            $percent = ($amount / $categoryChartTotal) * 100;
+                            ?>
+
+                            <div class="category-chart-row">
+                                <div class="chart-row-heading">
+                                    <span>
+                                        <?= htmlspecialchars($row["category_name"]) ?>
+                                    </span>
+                                    <span>
+                                        $<?= number_format($amount, 2) ?>
+                                        (<?= number_format($percent, 1) ?>%)
+                                    </span>
+                                </div>
+
+                                <div class="bar-track">
+                                    <div
+                                        class="bar-fill"
+                                        style="width: <?= number_format($width, 2) ?>%"
+                                    ></div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </section>
+
+                    <section class="chart-card">
+                        <h3>Monthly spending</h3>
+                        <p class="chart-caption">Your last six months</p>
+
+                        <div class="monthly-chart">
+                            <?php foreach ($monthlyChart as $row): ?>
+                                <?php
+                                $amount = (float)$row["total"];
+
+                                $height = $monthlyChartMax > 0
+                                    ? max(4, ($amount / $monthlyChartMax) * 100)
+                                    : 4;
+                                ?>
+
+                                <div class="month-column">
+                                    <span class="month-value">
+                                        $<?= number_format($amount, 0) ?>
+                                    </span>
+
+                                    <div class="month-bar-area">
+                                        <div
+                                            class="month-bar"
+                                            style="height: <?= number_format($height, 2) ?>%"
+                                        ></div>
+                                    </div>
+
+                                    <span class="month-label">
+                                        <?= htmlspecialchars($row["month_label"]) ?>
+                                    </span>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </section>
+                </div>
+            <?php endif; ?>
+
         <?php else: ?>
             <h2>Your expenses</h2>
-            <p class="hint">Search, filter, edit, or remove your recorded expenses.</p>
+            <p class="hint">
+                Search, filter, edit, or remove your recorded expenses.
+            </p>
 
             <form method="get" action="index.php">
                 <input type="hidden" name="tab" value="view">
@@ -402,10 +551,13 @@ require __DIR__ . "/includes/header.php";
                         <label for="category_filter">Category</label>
                         <select id="category_filter" name="category_id">
                             <option value="">All categories</option>
+
                             <?php foreach ($categories as $category): ?>
                                 <option
                                     value="<?= (int)$category["category_id"] ?>"
-                                    <?= $filterCategory == $category["category_id"] ? "selected" : "" ?>
+                                    <?= $filterCategory == $category["category_id"]
+                                        ? "selected"
+                                        : "" ?>
                                 >
                                     <?= htmlspecialchars($category["category_name"]) ?>
                                 </option>
@@ -470,7 +622,9 @@ require __DIR__ . "/includes/header.php";
 
                 <div class="filter-actions">
                     <button type="submit">Apply filters</button>
-                    <a class="button teal" href="index.php?tab=view">Clear filters</a>
+                    <a class="button teal" href="index.php?tab=view">
+                        Clear filters
+                    </a>
                 </div>
             </form>
 
@@ -482,51 +636,67 @@ require __DIR__ . "/includes/header.php";
             <div class="table-wrap">
                 <table>
                     <thead>
-                    <tr>
-                        <th>Description</th>
-                        <th>Amount</th>
-                        <th>Date</th>
-                        <th>Category</th>
-                        <th>Actions</th>
-                    </tr>
+                        <tr>
+                            <th>Description</th>
+                            <th>Amount</th>
+                            <th>Date</th>
+                            <th>Category</th>
+                            <th>Actions</th>
+                        </tr>
                     </thead>
-                    <tbody>
-                    <?php if (mysqli_num_rows($expensesResult) > 0): ?>
-                        <?php while ($expense = mysqli_fetch_assoc($expensesResult)): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($expense["description"]) ?></td>
-                                <td>$<?= number_format((float)$expense["amount"], 2) ?></td>
-                                <td><?= htmlspecialchars($expense["expense_date"]) ?></td>
-                                <td>
-                                    <span class="pill">
-                                        <?= htmlspecialchars($expense["category_name"]) ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <div class="row-actions">
-                                        <a class="edit-link"
-                                           href="edit_expense.php?id=<?= (int)$expense["expense_id"] ?>">
-                                            Edit
-                                        </a>
 
-                                        <form method="post" action="delete_expense.php"
-                                              onsubmit="return confirm('Delete this expense?');">
-                                            <input
-                                                type="hidden"
-                                                name="expense_id"
-                                                value="<?= (int)$expense["expense_id"] ?>"
+                    <tbody>
+                        <?php if (mysqli_num_rows($expensesResult) > 0): ?>
+                            <?php while ($expense = mysqli_fetch_assoc($expensesResult)): ?>
+                                <tr>
+                                    <td>
+                                        <?= htmlspecialchars($expense["description"]) ?>
+                                    </td>
+                                    <td>
+                                        $<?= number_format((float)$expense["amount"], 2) ?>
+                                    </td>
+                                    <td>
+                                        <?= htmlspecialchars($expense["expense_date"]) ?>
+                                    </td>
+                                    <td>
+                                        <span class="pill">
+                                            <?= htmlspecialchars($expense["category_name"]) ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="row-actions">
+                                            <a
+                                                class="edit-link"
+                                                href="edit_expense.php?id=<?= (int)$expense["expense_id"] ?>"
                                             >
-                                            <button class="delete" type="submit">Delete</button>
-                                        </form>
-                                    </div>
+                                                Edit
+                                            </a>
+
+                                            <form
+                                                method="post"
+                                                action="delete_expense.php"
+                                                onsubmit="return confirm('Delete this expense?');"
+                                            >
+                                                <input
+                                                    type="hidden"
+                                                    name="expense_id"
+                                                    value="<?= (int)$expense["expense_id"] ?>"
+                                                >
+                                                <button class="delete" type="submit">
+                                                    Delete
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endwhile; ?>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="5">
+                                    No expenses match these filters.
                                 </td>
                             </tr>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <tr>
-                            <td colspan="5">No expenses match these filters.</td>
-                        </tr>
-                    <?php endif; ?>
+                        <?php endif; ?>
                     </tbody>
                 </table>
             </div>
@@ -536,25 +706,34 @@ require __DIR__ . "/includes/header.php";
                 $paginationFilters = $_GET;
                 unset($paginationFilters["page"]);
                 ?>
+
                 <nav class="pagination">
                     <?php if ($page > 1): ?>
                         <?php
                         $previousFilters = $paginationFilters;
                         $previousFilters["page"] = $page - 1;
                         ?>
-                        <a href="index.php?<?= htmlspecialchars(http_build_query($previousFilters)) ?>">
+
+                        <a href="index.php?<?= htmlspecialchars(
+                            http_build_query($previousFilters)
+                        ) ?>">
                             Previous
                         </a>
                     <?php endif; ?>
 
-                    <span class="current">Page <?= $page ?> of <?= $totalPages ?></span>
+                    <span class="current">
+                        Page <?= $page ?> of <?= $totalPages ?>
+                    </span>
 
                     <?php if ($page < $totalPages): ?>
                         <?php
                         $nextFilters = $paginationFilters;
                         $nextFilters["page"] = $page + 1;
                         ?>
-                        <a href="index.php?<?= htmlspecialchars(http_build_query($nextFilters)) ?>">
+
+                        <a href="index.php?<?= htmlspecialchars(
+                            http_build_query($nextFilters)
+                        ) ?>">
                             Next
                         </a>
                     <?php endif; ?>
